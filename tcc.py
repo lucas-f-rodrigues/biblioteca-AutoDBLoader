@@ -30,39 +30,43 @@ def get_foreign_keys(cursor):
 
     return list(colunas_com_forengKey), foreign_keys
 
-def post_dados(cursor, conn):
-    primaryKey = "id"
-    lista_nulls = ['refresh_token']
 
-    df = pd.read_csv("./test.csv", sep=";")
-    df = df[sorted(df.columns)]
-    colunas = list(df.columns)
-    print(df)
-    print(colunas)
+def post_dados(cursor, table_json):
+    for table in table_json:
+        
+        tabela = table["name_table"]
+        primaryKey = table["primary_key"]
+        unwanted_attributes = table["unwanted_attributes"]
+        path_arquivo = table["path_file"]
+        sep_csv = table["file_sep"]
 
-    if primaryKey in colunas:
-        colunas.remove(primaryKey)
-    print("acesesou")
-    for nulls in lista_nulls:
-        if nulls in colunas:
-            colunas.remove(nulls)
+        df = pd.read_csv(path_arquivo, sep=sep_csv)
+        df = df[sorted(df.columns)]
+        colunas = list(df.columns)
 
- 
+        if primaryKey in colunas:
+            colunas.remove(primaryKey)
+        for nulls in unwanted_attributes:
+            if nulls in colunas:
+                colunas.remove(nulls)
 
-    cursor.executemany(query, valores)
-    conn.commit()
+        query = f"INSERT INTO {tabela} ({', '.join(colunas)}) VALUES ({', '.join(['%s' for _ in colunas])})"
+        valores = [tuple(row) for row in df.itertuples(index=False, name=None)]
 
-    print(f"{cursor.rowcount} registros inseridos com sucesso!")
+        cursor.executemany(query, valores)
+
+        print(f"{cursor.rowcount} registros inseridos com sucesso!")
 
 
-def get_schema_info(conn_params):
+def main(json):
     try:
+        db = json["db"]
         conn = mysql.connector.connect(
-            host=conn_params["host"],
-            user=conn_params["user"],
-            password=conn_params["password"],
-            database=conn_params["database"],
-            port=conn_params["port"],
+            host=db["host"],
+            user=db["user"],
+            password=db["password"],
+            database=db["database"],
+            port=db["port"],
             charset="utf8mb4",
             collation="utf8mb4_general_ci"
         )
@@ -83,7 +87,7 @@ def get_schema_info(conn_params):
             df = pd.DataFrame(foreign_keys, columns=["tabela", "chave_estrangeira", "tabela_estrangeira", "id_tabela_estrangeira"])
 
             print(df)
-            post_dados(cursor, conn)
+            post_dados(cursor, json["tables"])
 
             cursor.close()
         else:
@@ -104,4 +108,30 @@ conn_params = {
     "port": 8806
 }
 
-get_schema_info(conn_params)
+main({
+  "db": {
+    "host": "cloud.fslab.dev",
+    "user": "plataforma_matematica",
+    "password": "admin",
+    "database": "plataforma_matematica",
+    "port": 8806
+  },
+  "tables": [
+        {
+            "name_table": "usuario",
+            "primary_key": "id",
+            "unwanted_attributes": ['refresh_token'],
+            "path_file": "./usuarios.csv",
+            "type_file":"csv",
+            "file_sep": ";"
+        },
+        {
+            "name_table": "grupo",
+            "primary_key": "id",
+            "unwanted_attributes": [],
+            "path_file": "./grupos.csv",
+            "type_file":"csv",
+            "file_sep": ";"
+        }
+    ]
+  })

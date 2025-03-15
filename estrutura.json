@@ -1,34 +1,35 @@
-{"conecao_bando_de_dados": {},
-"tabelas":{
-    "tabela":[
-        {
-            "name":"usuarios",
-            "primary-key":"usua_id",
-            "foring-key":[{"tabela-name":"grupos", "atributo-name":"grup_id"}],
-            "path-file":"c:/lucas/arquivos/usuarios.csv"
-        },{
-            "name":"grupos",
-            "primary-key":"grup_id",
-            "foring-key":[{"tabela-name":"permissoes", "atributo-name":"perm_id"}],
-            "path-file":"c:/lucas/arquivos/grupos.csv"
-        },{
-            "name":"permissoes",
-            "primary-key":"perm_id",
-            "foring-key":[],
-            "path-file":"c:/lucas/arquivos/permissoes.csv"
-        }
+{
+  "conecao_bando_de_dados": {},
+  "tabelas": {
+    "tabela": [
+      {
+        "name": "usuarios",
+        "primary-key": "usua_id",
+        "foring-key": [
+          {
+            "tabela-name": "grupos",
+            "atributo-name": "grup_id"
+          }
+        ],
+        "path-file": "c:/lucas/arquivos/usuarios.csv"
+      },
+      {
+        "name": "grupos",
+        "primary-key": "grup_id",
+        "foring-key": [
+          {
+            "tabela-name": "permissoes",
+            "atributo-name": "perm_id"
+          }
+        ],
+        "path-file": "c:/lucas/arquivos/grupos.csv"
+      },
+      {
+        "name": "permissoes",
+        "primary-key": "perm_id",
+        "foring-key": [],
+        "path-file": "c:/lucas/arquivos/permissoes.csv"
+      }
     ]
-},
-"retorno-do-banco":"[('arquivos', 'aula_id', 'aula', 'id'), 
-                     ('modulo', 'turma_id', 'turma', 'id'), 
-                     ('feito', 'aluno_id', 'aluno', 'id'),
-                     ('feito', 'aula_id', 'aula', 'id'),
-                     ('aula', 'modulo_id', 'modulo', 'id'),
-                     ('usuario', 'grupo_id', 'grupo', 'id'),
-                     ('aluno', 'turma_id', 'turma', 'id'),
-                     ('aluno', 'usuario_id', 'usuario', 'id'),
-                     ('professor', 'turma_id', 'turma', 'id'),
-                     ('professor', 'usuario_id', 'usuario', 'id'),
-                     ('permissoes', 'grupo_id', 'grupo', 'id'),
-                     ('permissoes', 'rota_id', 'rota', 'id')]"
+  }
 }
