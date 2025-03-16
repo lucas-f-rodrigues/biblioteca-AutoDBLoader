@@ -2,6 +2,12 @@ import mysql.connector
 from mysql.connector import Error
 import pandas as pd
 
+
+
+## variáveis globais
+df_forengKey = None
+
+
 def get_tables_name(cursor):
     tebles_totais = []
     tables = cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE();") or cursor.fetchall()
@@ -11,6 +17,8 @@ def get_tables_name(cursor):
 
 
 def get_foreign_keys(cursor):
+    global df_forengKey
+    
     colunas_com_forengKey = set([])
     foreign_keys = cursor.execute("""
                 SELECT 
@@ -27,86 +35,113 @@ def get_foreign_keys(cursor):
 
     for fk in foreign_keys:
         colunas_com_forengKey.add(fk[0])
+    
+    df_forengKey = pd.DataFrame(foreign_keys, columns=["tabela", "chave_estrangeira", "tabela_estrangeira", "id_tabela_estrangeira"])
 
-    return list(colunas_com_forengKey), foreign_keys
+    return list(colunas_com_forengKey)
 
 
-def post_dados(cursor, table_json):
-    for table in table_json:
+def open_file_in_df(table_json):
+    type_file = table_json["type_file"]
+    df = None
+    
+    if(type_file.upper() == "CSV"):
+        df = pd.read_csv(table_json["path_file"], sep=table_json["file_sep"])
+        return df[sorted(df.columns)]
+    elif(type_file.upper() == "PARQUET"):
+        df = pd.read_parquet(table_json["path_file"])
+        return df[sorted(df.columns)]
+    elif(type_file.upper() == "JSON"):
+        df = pd.read_json(table_json["path_file"])
+        return df[sorted(df.columns)]
+    else:
+        raise TypeError(f'Tipo do arquivo "{type_file}" não é valido.') 
+
+
+def post_dados(cursor, tables_json, conn):
+    for table in tables_json:
+        try:
+            tabela = table["name_table"]
+            primaryKey = table["primary_key"]
+            unwanted_attributes = table["unwanted_attributes"]
+
+            df = open_file_in_df(table)
+            colunas = list(df.columns)
+
+            if primaryKey in colunas:
+                colunas.remove(primaryKey)
+            for nulls in unwanted_attributes:
+                if nulls in colunas:
+                    colunas.remove(nulls)
+
+            query = f"INSERT INTO {tabela} ({', '.join(colunas)}) VALUES ({', '.join(['%s' for _ in colunas])})"
+            valores = [tuple(row) for row in df.itertuples(index=False, name=None)]
+            
+            if not valores:
+                print(f"Nenhum dado para inserir na tabela {tabela}.")
+                continue
+
+            cursor.executemany(query, valores)
+            conn.commit()
+
+            if cursor.rowcount > 0:
+                print(f"{cursor.rowcount} registros inseridos com sucesso na tabela {tabela}!")
+            else:
+                print(f"Nenhum registro foi inserido na tabela {tabela}. Verifique os dados.")
+
+        except Exception as e:
+            print(f"Erro ao inserir dados na tabela {tabela}: {e}")
+
+
+
+def db_conect(db_json):
+    try:
+        db = db_json["db"]
+        conn = mysql.connector.connect(
+        host=db["host"],
+        user=db["user"],
+        password=db["password"],
+        database=db["database"],
+        port=db["port"],
+        charset="utf8mb4",
+        collation="utf8mb4_general_ci"
+        )
         
-        tabela = table["name_table"]
-        primaryKey = table["primary_key"]
-        unwanted_attributes = table["unwanted_attributes"]
-        path_arquivo = table["path_file"]
-        sep_csv = table["file_sep"]
-
-        df = pd.read_csv(path_arquivo, sep=sep_csv)
-        df = df[sorted(df.columns)]
-        colunas = list(df.columns)
-
-        if primaryKey in colunas:
-            colunas.remove(primaryKey)
-        for nulls in unwanted_attributes:
-            if nulls in colunas:
-                colunas.remove(nulls)
-
-        query = f"INSERT INTO {tabela} ({', '.join(colunas)}) VALUES ({', '.join(['%s' for _ in colunas])})"
-        valores = [tuple(row) for row in df.itertuples(index=False, name=None)]
-
-        cursor.executemany(query, valores)
-
-        print(f"{cursor.rowcount} registros inseridos com sucesso!")
+        if conn.is_connected():
+            return conn.cursor(), conn
+        else:
+            print("Não foi possível estabelecer a conexão com o DB.")
+    except Error as e:
+        print(f"Erro ao se conectar com o banco de dados: {e}")
 
 
 def main(json):
     try:
-        db = json["db"]
-        conn = mysql.connector.connect(
-            host=db["host"],
-            user=db["user"],
-            password=db["password"],
-            database=db["database"],
-            port=db["port"],
-            charset="utf8mb4",
-            collation="utf8mb4_general_ci"
-        )
+        cursor, conn = db_conect(json)
+
+        tebles_names = get_tables_name(cursor)
+        print(tebles_names)
         
-        if conn.is_connected():
-            cursor = conn.cursor()
+        colunas_com_forengKey = get_foreign_keys(cursor)
+        print(colunas_com_forengKey)
 
-            tebles_names = get_tables_name(cursor)
-            print(tebles_names)
-            
-            colunas_com_forengKey, foreign_keys = get_foreign_keys(cursor)
-            print(colunas_com_forengKey)
+        resultado = list(set(tebles_names) - set(colunas_com_forengKey))
 
-            resultado = list(set(tebles_names) - set(colunas_com_forengKey))
+        print(resultado)
 
-            print(resultado)
+        
 
-            df = pd.DataFrame(foreign_keys, columns=["tabela", "chave_estrangeira", "tabela_estrangeira", "id_tabela_estrangeira"])
+        print(df_forengKey)
+        post_dados(cursor, json["tables"], conn)
 
-            print(df)
-            post_dados(cursor, json["tables"])
+        cursor.close()
 
-            cursor.close()
-        else:
-            print("Não foi possível estabelecer a conexão.")
     except Error as e:
         print(f"Erro ao conectar ou executar a consulta: {e}")
     finally:
         if 'conn' in locals() and conn.is_connected():
             conn.close()
             print("Conexão encerrada.")
-
-# Parâmetros de conexão
-conn_params = {
-    "host": "cloud.fslab.dev",
-    "user": "plataforma_matematica",
-    "password": "admin",
-    "database": "plataforma_matematica",
-    "port": 8806
-}
 
 main({
   "db": {
