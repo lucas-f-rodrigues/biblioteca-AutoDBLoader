@@ -6,6 +6,8 @@ import pandas as pd
 
 ## variáveis globais
 df_forengKey = None
+tables_finished = []
+tables_finished_config = {}
 
 
 def get_tables_name(cursor):
@@ -64,15 +66,17 @@ def post_dados(cursor, tables_json, conn):
             tabela = table["name_table"]
             primaryKey = table["primary_key"]
             unwanted_attributes = table["unwanted_attributes"]
-
+            
             df = open_file_in_df(table)
+            df = df.rename(columns = {primaryKey:'id_old_insert'})
             colunas = list(df.columns)
 
-            if primaryKey in colunas:
-                colunas.remove(primaryKey)
             for nulls in unwanted_attributes:
                 if nulls in colunas:
                     colunas.remove(nulls)
+            
+            cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN (id_old_insert INT)")
+            conn.commit()
 
             query = f"INSERT INTO {tabela} ({', '.join(colunas)}) VALUES ({', '.join(['%s' for _ in colunas])})"
             valores = [tuple(row) for row in df.itertuples(index=False, name=None)]
@@ -120,18 +124,11 @@ def main(json):
         cursor, conn = db_conect(json)
 
         tebles_names = get_tables_name(cursor)
-        print(tebles_names)
         
         colunas_com_forengKey = get_foreign_keys(cursor)
-        print(colunas_com_forengKey)
 
         resultado = list(set(tebles_names) - set(colunas_com_forengKey))
 
-        print(resultado)
-
-        
-
-        print(df_forengKey)
         post_dados(cursor, json["tables"], conn)
 
         cursor.close()
@@ -158,7 +155,8 @@ main({
             "unwanted_attributes": ['refresh_token'],
             "path_file": "./usuarios.csv",
             "type_file":"csv",
-            "file_sep": ";"
+            "file_sep": ";",
+            "autoIncrement":True
         },
         {
             "name_table": "grupo",
@@ -166,7 +164,8 @@ main({
             "unwanted_attributes": [],
             "path_file": "./grupos.csv",
             "type_file":"csv",
-            "file_sep": ";"
+            "file_sep": ";",
+            "autoIncrement":True
         }
     ]
   })
