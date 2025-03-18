@@ -8,14 +8,15 @@ import pandas as pd
 df_forengKey = None
 tables_finished = []
 tables_finished_config = {}
+total_tables = 0
 
 
 def get_tables_name(cursor):
-    tebles_totais = []
+    tables_totais = []
     tables = cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE();") or cursor.fetchall()
     for table in tables:
-        tebles_totais.append(table[0])
-    return tebles_totais
+        tables_totais.append(table[0])
+    return tables_totais
 
 
 def get_foreign_keys(cursor):
@@ -60,42 +61,114 @@ def open_file_in_df(table_json):
         raise TypeError(f'Tipo do arquivo "{type_file}" não é valido.') 
 
 
+def verification_tables_finished(table_name):
+    df = df_forengKey[df_forengKey["tabela"] == table_name]
+    list_tables_foreng = df["tabela_estrangeira"].unique().tolist()
+    return set(list_tables_foreng).issubset(set(tables_finished))
+
+
+## continuar minha função que busca os dados no banco de dados e alterar os ids antigos pelos novos
+def get_new_id(df, table_name, cursor):
+    df_filter = df_forengKey[df_forengKey["tabela"] == table_name]
+    list_tables_foreng = df["tabela_estrangeira"].unique().tolist()
+
+
 def post_dados(cursor, tables_json, conn):
+    global tables_finished
+    while len(tables_finished) != total_tables:
+        for table in tables_json:
+            try:
+                if table["name_table"] not in tables_finished and verification_tables_finished(table["name_table"]):
+                    if "not_primary_key" in table:
+                        not_primary_key = table["not_primary_key"]
+                    else:
+                        not_primary_key = False
+                    
+                    tabela = table["name_table"]
+                    if( not not_primary_key):
+                        primaryKey = table["primary_key"]
+                    unwanted_attributes = table["unwanted_attributes"]
+                    
+                    df = open_file_in_df(table)
+                    if( not not_primary_key):
+                        df = df.rename(columns = {primaryKey:'id_old_insert'})
+                    colunas = list(df.columns)
+
+                    for nulls in unwanted_attributes:
+                        if nulls in colunas:
+                            colunas.remove(nulls)
+                            
+                    if( not not_primary_key):
+                        cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN (id_old_insert INT)")
+                        conn.commit()
+
+                    query = f"INSERT INTO {tabela} (`{'`, `'.join(colunas)}`) VALUES ({', '.join(['%s' for _ in colunas])})"
+                    valores = [tuple(row) for row in df.itertuples(index=False, name=None)]
+                    
+                    if not valores:
+                        print(f"Nenhum dado para inserir na tabela {tabela}.")
+                        continue
+                    cursor.executemany(query, valores)
+                    conn.commit()
+
+                    if cursor.rowcount > 0:
+                        print(f"{cursor.rowcount} registros inseridos com sucesso na tabela {tabela}!")
+                    else:
+                        print(f"Nenhum registro foi inserido na tabela {tabela}. Verifique os dados.")
+                    tables_finished.append(tabela)
+                    
+            except Exception as e:
+                print(f"Erro ao inserir dados na tabela {tabela}: {e}")
+
+
+
+def insert_tables_not_relation(cursor, tables_json, conn, list_tables):
+    global tables_finished
     for table in tables_json:
         try:
-            tabela = table["name_table"]
-            primaryKey = table["primary_key"]
-            unwanted_attributes = table["unwanted_attributes"]
-            
-            df = open_file_in_df(table)
-            df = df.rename(columns = {primaryKey:'id_old_insert'})
-            colunas = list(df.columns)
+            if table["name_table"] in list_tables:
+                if "not_primary_key" in table:
+                    not_primary_key = table["not_primary_key"]
+                else:
+                    not_primary_key = False
+                
+                tabela = table["name_table"]
+                if( not not_primary_key):
+                    primaryKey = table["primary_key"]
+                unwanted_attributes = table["unwanted_attributes"]
+                
+                df = open_file_in_df(table)
+                if( not not_primary_key):
+                    df = df.rename(columns = {primaryKey:'id_old_insert'})
+                colunas = list(df.columns)
 
-            for nulls in unwanted_attributes:
-                if nulls in colunas:
-                    colunas.remove(nulls)
-            
-            cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN (id_old_insert INT)")
-            conn.commit()
+                for nulls in unwanted_attributes:
+                    if nulls in colunas:
+                        colunas.remove(nulls)
+                        
+                if( not not_primary_key):
+                    cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN (id_old_insert INT)")
+                    conn.commit()
 
-            query = f"INSERT INTO {tabela} ({', '.join(colunas)}) VALUES ({', '.join(['%s' for _ in colunas])})"
-            valores = [tuple(row) for row in df.itertuples(index=False, name=None)]
-            
-            if not valores:
-                print(f"Nenhum dado para inserir na tabela {tabela}.")
-                continue
+                query = f"INSERT INTO {tabela} (`{'`, `'.join(colunas)}`) VALUES ({', '.join(['%s' for _ in colunas])})"
+                valores = [tuple(row) for row in df.itertuples(index=False, name=None)]
+                
+                if not valores:
+                    print(f"Nenhum dado para inserir na tabela {tabela}.")
+                    continue
 
-            cursor.executemany(query, valores)
-            conn.commit()
+                cursor.executemany(query, valores)
+                conn.commit()
 
-            if cursor.rowcount > 0:
-                print(f"{cursor.rowcount} registros inseridos com sucesso na tabela {tabela}!")
-            else:
-                print(f"Nenhum registro foi inserido na tabela {tabela}. Verifique os dados.")
+                if cursor.rowcount > 0:
+                    print(f"{cursor.rowcount} registros inseridos com sucesso na tabela {tabela}!")
+                else:
+                    print(f"Nenhum registro foi inserido na tabela {tabela}. Verifique os dados.")
+                    
+                tables_finished.append(tabela)
 
         except Exception as e:
             print(f"Erro ao inserir dados na tabela {tabela}: {e}")
-
 
 
 def db_conect(db_json):
@@ -121,15 +194,21 @@ def db_conect(db_json):
 
 def main(json):
     try:
+        global total_tables
         cursor, conn = db_conect(json)
 
-        tebles_names = get_tables_name(cursor)
+        tebles_names = ["usuario","grupo","permissoes","rota"]#get_tables_name(cursor)
+        total_tables = len(tebles_names)
         
-        colunas_com_forengKey = get_foreign_keys(cursor)
-
+        colunas_com_forengKey = ["permissoes","usuario"]#get_foreign_keys(cursor)
+        get_foreign_keys(cursor)
         resultado = list(set(tebles_names) - set(colunas_com_forengKey))
+        
+        
+        insert_tables_not_relation(cursor, json["tables"], conn, resultado)
 
         post_dados(cursor, json["tables"], conn)
+        print(df_forengKey)
 
         cursor.close()
 
@@ -165,6 +244,24 @@ main({
             "path_file": "./grupos.csv",
             "type_file":"csv",
             "file_sep": ";",
+            "autoIncrement":True
+        },
+        {
+            "name_table": "permissoes",
+            "not_primary_key": True,
+            "unwanted_attributes": [],
+            "path_file": "./permissoes.csv",
+            "type_file":"csv",
+            "file_sep": ",",
+            "autoIncrement":False
+        },
+        {
+            "name_table": "rota",
+            "primary_key": "id",
+            "unwanted_attributes": [],
+            "path_file": "./rota.csv",
+            "type_file":"csv",
+            "file_sep": ",",
             "autoIncrement":True
         }
     ]
