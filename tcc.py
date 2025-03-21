@@ -49,11 +49,40 @@ def verification_tables_finished(table_name):
     return set(list_tables_foreng).issubset(set(tables_finished))
 
 
+def create_coll_id_old_in_tables(tables_json, cursor, conn):
+    for table_json in tables_json:
+        name_table = table_json["name_table"]
+        not_primary_key = get_not_primary_key(table_json)
+        
+        cursor.execute(f"""
+            SELECT COUNT(*) 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_NAME = '{name_table}' 
+            AND COLUMN_NAME = 'id_old_insert' 
+            AND TABLE_SCHEMA = DATABASE()
+        """)
+        coluna_existe = cursor.fetchone()[0]
+
+        if coluna_existe:
+            cursor.execute(f"ALTER TABLE {name_table} DROP COLUMN id_old_insert")
+            conn.commit()
+        if( not not_primary_key and table_json["autoIncrement"]):
+            cursor.execute(f"ALTER TABLE {name_table} ADD COLUMN id_old_insert INT")
+            conn.commit()
+        
+
+def get_not_primary_key(table):
+    not_primary_key = False
+    if "not_primary_key" in table:
+        not_primary_key = table["not_primary_key"]
+    return not_primary_key
+        
+
 ## continuar minha função que busca os dados no banco de dados e alterar os ids antigos pelos novos,
-def get_new_id_from_db(df, table_name, cursor, table_json):
+def get_new_id_from_db(df, table_name, cursor, not_primary_key, table_json):
     df_filter = df_forengKey[df_forengKey["tabela"] == table_name]
     for row in df_filter.itertuples(index=False):
-        if not table_json["autoIncrement"]:
+        if not table_json["autoIncrement"] and not not_primary_key:
             continue
         ids_old = cursor.execute(f"""
                 SELECT 
@@ -70,8 +99,8 @@ def get_new_id_from_db(df, table_name, cursor, table_json):
                             .rename(columns = {"primary_id_query": row.chave_estrangeira})
     return df
 
-     
-def open_file_in_df(table_json, cursor, has_foregkey = False):
+# a aplicação esta com erro na hora de apagar as colunas  unwanted_attributes do df, o que acontece e que como a colunas não esta sendo apagada, na hora de fazer o insert tem mais colunas nos dados do que no header
+def open_file_in_df(table_json, cursor, not_primary_key, unwanted_attributes, has_foregkey = False):
     type_file = table_json["type_file"]
     df = None
     
@@ -87,27 +116,32 @@ def open_file_in_df(table_json, cursor, has_foregkey = False):
     else:
         raise TypeError(f'Tipo do arquivo "{type_file}" não é valido.') 
     if(has_foregkey):
-        return get_new_id_from_db(df, table_json["name_table"], cursor, table_json)
+        return get_new_id_from_db(df, table_json["name_table"], cursor, not_primary_key, table_json)
+    print(unwanted_attributes)
+    print(df)
+    df = df.drop(columns=[unwanted_attributes])
+    print(df)
     return df
 
 
 def post_dados(cursor, tables_json, conn):
     global tables_finished
     while len(tables_finished) != total_tables:
+        cursor.close()
+        cursor = conn.cursor()
+        print("abriu novamente o cursor")
+
         for table in tables_json:
             # try:
                 if table["name_table"] not in tables_finished and verification_tables_finished(table["name_table"]):
-                    if "not_primary_key" in table:
-                        not_primary_key = table["not_primary_key"]
-                    else:
-                        not_primary_key = False
+                    not_primary_key = get_not_primary_key(table)
                     
                     tabela = table["name_table"]
                     if( not not_primary_key):
                         primaryKey = table["primary_key"]
                     unwanted_attributes = table["unwanted_attributes"]
                     
-                    df = open_file_in_df(table, cursor, has_foregkey=True)
+                    df = open_file_in_df(table, cursor, not_primary_key, unwanted_attributes,  has_foregkey=True)
 
                     if( not not_primary_key and table["autoIncrement"]):
                         df = df.rename(columns = {primaryKey:'id_old_insert'})
@@ -117,18 +151,22 @@ def post_dados(cursor, tables_json, conn):
                         if nulls in colunas:
                             colunas.remove(nulls)
                             
-                    if( not not_primary_key and table["autoIncrement"]):
-                        cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN (id_old_insert INT)")
-                        conn.commit()
+                    # if( not not_primary_key and table["autoIncrement"]):
+                    #     cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN (id_old_insert INT)")
+                    #     conn.commit()
 
                     query = f"INSERT INTO {tabela} (`{'`, `'.join(colunas)}`) VALUES ({', '.join(['%s' for _ in colunas])})"
                     valores = [tuple(row) for row in df.itertuples(index=False, name=None)]
+                    print(query)
+                    print(valores[0])
                     
                     if not valores:
                         print(f"Nenhum dado para inserir na tabela {tabela}.")
                         continue
                     cursor.executemany(query, valores)
+                    cursor.fetchall()
                     conn.commit()
+                    print(tabela)
 
                     if cursor.rowcount > 0:
                         print(f"{cursor.rowcount} registros inseridos com sucesso na tabela {tabela}!")
@@ -146,18 +184,13 @@ def insert_tables_not_relation(cursor, tables_json, conn, list_tables):
     for table in tables_json:
         try:
             if table["name_table"] in list_tables:
-                if "not_primary_key" in table:
-                    not_primary_key = table["not_primary_key"]
-                else:
-                    not_primary_key = False
                 
                 tabela = table["name_table"]
-                if( not not_primary_key):
-                    primaryKey = table["primary_key"]
+                primaryKey = table["primary_key"]
                 unwanted_attributes = table["unwanted_attributes"]
                 
-                df = open_file_in_df(table, cursor)
-                if( not not_primary_key and table["autoIncrement"]):
+                df = open_file_in_df(table, cursor, False, unwanted_attributes)
+                if(table["autoIncrement"]):
                     df = df.rename(columns = {primaryKey:'id_old_insert'})
                 colunas = list(df.columns)
 
@@ -165,9 +198,9 @@ def insert_tables_not_relation(cursor, tables_json, conn, list_tables):
                     if nulls in colunas:
                         colunas.remove(nulls)
                         
-                if( not not_primary_key and table["autoIncrement"]):
-                    cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN (id_old_insert INT)")
-                    conn.commit()
+                # if(table["autoIncrement"]):
+                #     cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN (id_old_insert INT)")
+                #     conn.commit()
 
                 query = f"INSERT INTO {tabela} (`{'`, `'.join(colunas)}`) VALUES ({', '.join(['%s' for _ in colunas])})"
                 valores = [tuple(row) for row in df.itertuples(index=False, name=None)]
@@ -178,6 +211,7 @@ def insert_tables_not_relation(cursor, tables_json, conn, list_tables):
 
                 cursor.executemany(query, valores)
                 conn.commit()
+                print(tabela)
 
                 if cursor.rowcount > 0:
                     print(f"{cursor.rowcount} registros inseridos com sucesso na tabela {tabela}!")
@@ -213,14 +247,17 @@ def db_conect(db_json):
 
 
 def main(json):
-    try:
+    # try:
         global total_tables
         cursor, conn = db_conect(json)
 
-        tebles_names = ["usuario","grupo","permissoes","rota","not_a_i"]#get_tables_name(cursor)
+        # tebles_names = ["usuario","grupo","permissoes","rota","not_a_i"]#get_tables_name(cursor)
+        tebles_names = get_tables_name(cursor)
         total_tables = len(tebles_names)
+        create_coll_id_old_in_tables(json["tables"], cursor, conn)
         
-        colunas_com_forengKey = ["permissoes","usuario"]#get_foreign_keys(cursor)
+        #colunas_com_forengKey = ["permissoes","usuario"]#get_foreign_keys(cursor)
+        colunas_com_forengKey = get_foreign_keys(cursor)
         get_foreign_keys(cursor)
         resultado = list(set(tebles_names) - set(colunas_com_forengKey))
         
@@ -232,12 +269,12 @@ def main(json):
 
         cursor.close()
 
-    except Error as e:
-        print(f"Erro ao conectar ou executar a consulta: {e}")
-    finally:
-        if 'conn' in locals() and conn.is_connected():
-            conn.close()
-            print("Conexão encerrada.")
+    # except Error as e:
+    #     print(f"Erro ao conectar ou executar a consulta: {e}")
+    # finally:
+    #     if 'conn' in locals() and conn.is_connected():
+    #         conn.close()
+    #         print("Conexão encerrada.")
 
 main({
   "db": {
@@ -252,25 +289,25 @@ main({
             "name_table": "usuario",
             "primary_key": "id",
             "unwanted_attributes": ['refresh_token'],
-            "path_file": "./usuarios.csv",
+            "path_file": "./banco_completo/usuario.csv",
             "type_file":"csv",
-            "file_sep": ";",
+            "file_sep": ",",
             "autoIncrement":True
         },
         {
             "name_table": "grupo",
             "primary_key": "id",
             "unwanted_attributes": [],
-            "path_file": "./grupos.csv",
+            "path_file": "./banco_completo/grupo.csv",
             "type_file":"csv",
-            "file_sep": ";",
+            "file_sep": ",",
             "autoIncrement":True
         },
         {
             "name_table": "permissoes",
             "not_primary_key": True,
             "unwanted_attributes": [],
-            "path_file": "./permissoes.csv",
+            "path_file": "./banco_completo/permissoes.csv",
             "type_file":"csv",
             "file_sep": ",",
             "autoIncrement":False
@@ -279,19 +316,148 @@ main({
             "name_table": "rota",
             "primary_key": "id",
             "unwanted_attributes": [],
-            "path_file": "./rota.csv",
+            "path_file": "./banco_completo/rota.csv",
             "type_file":"csv",
             "file_sep": ",",
             "autoIncrement":True
-        },
+        }
+        ,
         {
             "name_table": "not_a_i",
             "primary_key": "id",
             "unwanted_attributes": [],
-            "path_file": "./not_a_i.csv",
+            "path_file": "./banco_completo/not_a_i.csv",
             "type_file":"csv",
             "file_sep": ";",
             "autoIncrement":False
         }
+        ,
+        {
+            "name_table": "aluno",
+            "primary_key": "id",
+            "unwanted_attributes": [],
+            "path_file": "./banco_completo/aluno.csv",
+            "type_file":"csv",
+            "file_sep": ",",
+            "autoIncrement":True
+        }
+        ,
+        {
+            "name_table": "arquivos",
+            "primary_key": "id",
+            "unwanted_attributes": [],
+            "path_file": "./banco_completo/arquivos.json",
+            "type_file":"json",
+            "autoIncrement":True
+        }
+        ,
+        {
+            "name_table": "aula",
+            "primary_key": "id",
+            "unwanted_attributes": ["pdf_questoes","pdf_resolucao"],
+            "path_file": "./banco_completo/aula.csv",
+            "type_file":"csv",
+            "file_sep": ",",
+            "autoIncrement":True
+        }
+        ,
+        {
+            "name_table": "feito",
+            "primary_key": "id",
+            "unwanted_attributes": [],
+            "path_file": "./banco_completo/feito.csv",
+            "type_file":"csv",
+            "file_sep": ",",
+            "autoIncrement":True
+        }
+        ,
+        {
+            "name_table": "modulo",
+            "primary_key": "id",
+            "unwanted_attributes": [],
+            "path_file": "./banco_completo/modulo.csv",
+            "type_file":"csv",
+            "file_sep": ",",
+            "autoIncrement":True
+        }
+        ,
+        {
+            "name_table": "professor",
+            "primary_key": "id",
+            "unwanted_attributes": [],
+            "path_file": "./banco_completo/professor.csv",
+            "type_file":"csv",
+            "file_sep": ",",
+            "autoIncrement":True
+        }
+        ,
+        {
+            "name_table": "turma",
+            "primary_key": "id",
+            "unwanted_attributes": [],
+            "path_file": "./banco_completo/turma.csv",
+            "type_file":"csv",
+            "file_sep": ",",
+            "autoIncrement":True
+        }
     ]
   })
+
+
+# main({
+#   "db": {
+#     "host": "cloud.fslab.dev",
+#     "user": "plataforma_matematica",
+#     "password": "admin",
+#     "database": "plataforma_matematica",
+#     "port": 8806
+#   },
+#   "tables": [
+#         {
+#             "name_table": "usuario",
+#             "primary_key": "id",
+#             "unwanted_attributes": ['refresh_token'],
+#             "path_file": "./usuarios.csv",
+#             "type_file":"csv",
+#             "file_sep": ";",
+#             "autoIncrement":True
+#         },
+#         {
+#             "name_table": "grupo",
+#             "primary_key": "id",
+#             "unwanted_attributes": [],
+#             "path_file": "./grupos.csv",
+#             "type_file":"csv",
+#             "file_sep": ";",
+#             "autoIncrement":True
+#         },
+#         {
+#             "name_table": "permissoes",
+#             "not_primary_key": True,
+#             "unwanted_attributes": [],
+#             "path_file": "./permissoes.csv",
+#             "type_file":"csv",
+#             "file_sep": ",",
+#             "autoIncrement":False
+#         },
+#         {
+#             "name_table": "rota",
+#             "primary_key": "id",
+#             "unwanted_attributes": [],
+#             "path_file": "./rota.csv",
+#             "type_file":"csv",
+#             "file_sep": ",",
+#             "autoIncrement":True
+#         }
+#         # ,
+#         # {
+#         #     "name_table": "not_a_i",
+#         #     "primary_key": "id",
+#         #     "unwanted_attributes": [],
+#         #     "path_file": "./not_a_i.csv",
+#         #     "type_file":"csv",
+#         #     "file_sep": ";",
+#         #     "autoIncrement":False
+#         # }
+#     ]
+#   })

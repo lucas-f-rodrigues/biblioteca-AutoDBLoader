@@ -17,8 +17,6 @@ dados = [
 
 df = pd.DataFrame(dados, columns=["tabela", "chave_estrangeira", "tabela_estrangeira", "id_tabela_estrangeira"])
 
-print(df)
-
 dicionario = dict({"nome":df})
 
-print(dicionario["nome"])
+print(df.drop(columns=['tabela']))

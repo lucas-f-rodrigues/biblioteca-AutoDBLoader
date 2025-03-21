@@ -1,0 +1,15 @@
+"id","nome","grupo_id","senha","matricula","active","refresh_token"
+"1","professor","2","$2a$10$CAOXGP36GSxF89D/fOiPfu87sbnK5C.9LqJdlmjgwOmrDVN8u3coi","123456","1",NULL
+"2","professor2","2","$2a$10$CAOXGP36GSxF89D/fOiPfu3pU3Xyh7k0caxaklVFt/GAsPEaMVrsm","1020304050","1",NULL
+"3","Assis Pereira","1","$2a$10$CAOXGP36GSxF89D/fOiPfu87sbnK5C.9LqJdlmjgwOmrDVN8u3coi","123457","0",NULL
+"4","Huguetti Franco","1","$2a$10$CAOXGP36GSxF89D/fOiPfu87sbnK5C.9LqJdlmjgwOmrDVN8u3coi","123458","1",NULL
+"5","George Costa","1","$2a$10$CAOXGP36GSxF89D/fOiPfu87sbnK5C.9LqJdlmjgwOmrDVN8u3coi","123459","1",NULL
+"6","Marçal Moreira","1","$2a$10$CAOXGP36GSxF89D/fOiPfu87sbnK5C.9LqJdlmjgwOmrDVN8u3coi","123461","1",NULL
+"7","Adair Martins","1","$2a$10$CAOXGP36GSxF89D/fOiPfu87sbnK5C.9LqJdlmjgwOmrDVN8u3coi","34663467","0",NULL
+"8","Laura Barros","1","$2a$10$CAOXGP36GSxF89D/fOiPfu87sbnK5C.9LqJdlmjgwOmrDVN8u3coi","34264646","1",NULL
+"9","Maraci Batista","1","$2a$10$CAOXGP36GSxF89D/fOiPfu87sbnK5C.9LqJdlmjgwOmrDVN8u3coi","64633734","1",NULL
+"10","Genival Albuquerque","1","$2a$10$CAOXGP36GSxF89D/fOiPfu87sbnK5C.9LqJdlmjgwOmrDVN8u3coi","23646364","1",NULL
+"11","Cassimiro Pereira","1","$2a$10$CAOXGP36GSxF89D/fOiPfu87sbnK5C.9LqJdlmjgwOmrDVN8u3coi","75784833","0",NULL
+"12","Vanilda Barros Neto","1","$2a$10$CAOXGP36GSxF89D/fOiPfu87sbnK5C.9LqJdlmjgwOmrDVN8u3coi","35734678","1",NULL
+"13","Dr. Lucia Franco","1","$2a$10$CAOXGP36GSxF89D/fOiPfu87sbnK5C.9LqJdlmjgwOmrDVN8u3coi","37734733","1",NULL
+"14","Elizabete Martins","1","$2a$10$CAOXGP36GSxF89D/fOiPfu87sbnK5C.9LqJdlmjgwOmrDVN8u3coi","64637866","1",NULL
