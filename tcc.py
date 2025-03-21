@@ -67,17 +67,42 @@ def verification_tables_finished(table_name):
     return set(list_tables_foreng).issubset(set(tables_finished))
 
 
-## continuar minha função que busca os dados no banco de dados e alterar os ids antigos pelos novos
+## continuar minha função que busca os dados no banco de dados e alterar os ids antigos pelos novos,
+## esta com erro ao tentar dropar a colunas forengkey
 def get_new_id(df, table_name, cursor):
     df_filter = df_forengKey[df_forengKey["tabela"] == table_name]
-    list_tables_foreng = df["tabela_estrangeira"].unique().tolist()
+    for row in df_filter.itertuples(index=False):
+        print(f"tabela:{row.tabela}, chave_estrangeira: {row.chave_estrangeira}, tabela_estrangeira: {row.tabela_estrangeira}, id_tabela_estrangeira:{row.id_tabela_estrangeira}")
+        ids_old = cursor.execute(f"""
+                SELECT 
+                    {row.id_tabela_estrangeira}, id_old_insert
+                FROM 
+                    {row.tabela_estrangeira}
+                WHERE 
+                    id_old_insert IS NOT NULL
+            """) or cursor.fetchall()
+        df_ids_old = pd.DataFrame(ids_old, columns=["primary_id_query", "id_old_insert"])
+        print(f"tabela:{row.tabela}")
+        print(df)
+        print(f"tabela_estrangeira:{row.tabela_estrangeira}")
+        print(df_ids_old)
+        df_merged = df.merge(df_ids_old, left_on=row.chave_estrangeira, right_on='id_old_insert', how='left')
+        print("feito o merge")
+        df_merged['primary_id_query'] = df_merged['primary_id_query'].fillna(df[row.chave_estrangeira]).astype(int)
+        print(df_merged)
+        df_merged = df_merged.drop(columns=[row.chave_estrangeira])
+        # df_merged = df_merged.rename(columns = {"primary_id_query": row.chave_estrangeira})
+        df_merged = df_merged.rename(columns = {"primary_id_query": "test"})
+        print("colunas dropada: "+ row.chave_estrangeira)
+        print(df_merged)
+        
 
 
 def post_dados(cursor, tables_json, conn):
     global tables_finished
     while len(tables_finished) != total_tables:
         for table in tables_json:
-            try:
+            # try:
                 if table["name_table"] not in tables_finished and verification_tables_finished(table["name_table"]):
                     if "not_primary_key" in table:
                         not_primary_key = table["not_primary_key"]
@@ -90,6 +115,7 @@ def post_dados(cursor, tables_json, conn):
                     unwanted_attributes = table["unwanted_attributes"]
                     
                     df = open_file_in_df(table)
+                    get_new_id(df,tabela, cursor )
                     if( not not_primary_key):
                         df = df.rename(columns = {primaryKey:'id_old_insert'})
                     colunas = list(df.columns)
@@ -117,8 +143,8 @@ def post_dados(cursor, tables_json, conn):
                         print(f"Nenhum registro foi inserido na tabela {tabela}. Verifique os dados.")
                     tables_finished.append(tabela)
                     
-            except Exception as e:
-                print(f"Erro ao inserir dados na tabela {tabela}: {e}")
+            # except Exception as e:
+            #     print(f"Erro ao inserir dados na tabela {tabela}: {e}")
 
 
 
