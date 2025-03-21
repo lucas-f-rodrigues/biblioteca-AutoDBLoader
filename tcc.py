@@ -3,7 +3,6 @@ from mysql.connector import Error
 import pandas as pd
 
 
-
 ## variáveis globais
 df_forengKey = None
 tables_finished = []
@@ -41,24 +40,7 @@ def get_foreign_keys(cursor):
     
     df_forengKey = pd.DataFrame(foreign_keys, columns=["tabela", "chave_estrangeira", "tabela_estrangeira", "id_tabela_estrangeira"])
 
-    return list(colunas_com_forengKey)
-
-
-def open_file_in_df(table_json):
-    type_file = table_json["type_file"]
-    df = None
-    
-    if(type_file.upper() == "CSV"):
-        df = pd.read_csv(table_json["path_file"], sep=table_json["file_sep"])
-        return df[sorted(df.columns)]
-    elif(type_file.upper() == "PARQUET"):
-        df = pd.read_parquet(table_json["path_file"])
-        return df[sorted(df.columns)]
-    elif(type_file.upper() == "JSON"):
-        df = pd.read_json(table_json["path_file"])
-        return df[sorted(df.columns)]
-    else:
-        raise TypeError(f'Tipo do arquivo "{type_file}" não é valido.') 
+    return list(colunas_com_forengKey)    
 
 
 def verification_tables_finished(table_name):
@@ -68,10 +50,11 @@ def verification_tables_finished(table_name):
 
 
 ## continuar minha função que busca os dados no banco de dados e alterar os ids antigos pelos novos,
-## esta com erro ao tentar dropar a colunas forengkey
-def get_new_id(df, table_name, cursor):
+def get_new_id_from_db(df, table_name, cursor, table_json):
     df_filter = df_forengKey[df_forengKey["tabela"] == table_name]
     for row in df_filter.itertuples(index=False):
+        if not table_json["autoIncrement"]:
+            continue
         ids_old = cursor.execute(f"""
                 SELECT 
                     {row.id_tabela_estrangeira}, id_old_insert
@@ -81,11 +64,31 @@ def get_new_id(df, table_name, cursor):
                     id_old_insert IS NOT NULL
             """) or cursor.fetchall()
         df_ids_old = pd.DataFrame(ids_old, columns=["primary_id_query", "id_old_insert"])
-        df_merged = df.merge(df_ids_old, left_on=row.chave_estrangeira, right_on='id_old_insert', how='left')
-        df_merged['primary_id_query'] = df_merged['primary_id_query'].fillna(df[row.chave_estrangeira]).astype(int)
-        return df_merged.drop(columns=[row.chave_estrangeira, 'id_old_insert'])\
+        df = df.merge(df_ids_old, left_on=row.chave_estrangeira, right_on='id_old_insert', how='left')
+        df['primary_id_query'] = df['primary_id_query'].fillna(df[row.chave_estrangeira]).astype(int)
+        df = df.drop(columns=[row.chave_estrangeira, 'id_old_insert'])\
                             .rename(columns = {"primary_id_query": row.chave_estrangeira})
-        
+    return df
+
+     
+def open_file_in_df(table_json, cursor, has_foregkey = False):
+    type_file = table_json["type_file"]
+    df = None
+    
+    if(type_file.upper() == "CSV"):
+        df = pd.read_csv(table_json["path_file"], sep=table_json["file_sep"])
+        df = df[sorted(df.columns)]
+    elif(type_file.upper() == "PARQUET"):
+        df = pd.read_parquet(table_json["path_file"])
+        df = df[sorted(df.columns)]
+    elif(type_file.upper() == "JSON"):
+        df = pd.read_json(table_json["path_file"])
+        df = df[sorted(df.columns)]
+    else:
+        raise TypeError(f'Tipo do arquivo "{type_file}" não é valido.') 
+    if(has_foregkey):
+        return get_new_id_from_db(df, table_json["name_table"], cursor, table_json)
+    return df
 
 
 def post_dados(cursor, tables_json, conn):
@@ -104,9 +107,9 @@ def post_dados(cursor, tables_json, conn):
                         primaryKey = table["primary_key"]
                     unwanted_attributes = table["unwanted_attributes"]
                     
-                    df = open_file_in_df(table)
-                    df = get_new_id(df,tabela, cursor )
-                    if( not not_primary_key):
+                    df = open_file_in_df(table, cursor, has_foregkey=True)
+
+                    if( not not_primary_key and table["autoIncrement"]):
                         df = df.rename(columns = {primaryKey:'id_old_insert'})
                     colunas = list(df.columns)
 
@@ -114,7 +117,7 @@ def post_dados(cursor, tables_json, conn):
                         if nulls in colunas:
                             colunas.remove(nulls)
                             
-                    if( not not_primary_key):
+                    if( not not_primary_key and table["autoIncrement"]):
                         cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN (id_old_insert INT)")
                         conn.commit()
 
@@ -137,7 +140,7 @@ def post_dados(cursor, tables_json, conn):
             #     print(f"Erro ao inserir dados na tabela {tabela}: {e}")
 
 
-
+# tirar a validação que valida se tem chave primaria pois se não tem chave estrangeira é obritorio ter a primaria
 def insert_tables_not_relation(cursor, tables_json, conn, list_tables):
     global tables_finished
     for table in tables_json:
@@ -153,8 +156,8 @@ def insert_tables_not_relation(cursor, tables_json, conn, list_tables):
                     primaryKey = table["primary_key"]
                 unwanted_attributes = table["unwanted_attributes"]
                 
-                df = open_file_in_df(table)
-                if( not not_primary_key):
+                df = open_file_in_df(table, cursor)
+                if( not not_primary_key and table["autoIncrement"]):
                     df = df.rename(columns = {primaryKey:'id_old_insert'})
                 colunas = list(df.columns)
 
@@ -162,7 +165,7 @@ def insert_tables_not_relation(cursor, tables_json, conn, list_tables):
                     if nulls in colunas:
                         colunas.remove(nulls)
                         
-                if( not not_primary_key):
+                if( not not_primary_key and table["autoIncrement"]):
                     cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN (id_old_insert INT)")
                     conn.commit()
 
@@ -197,7 +200,8 @@ def db_conect(db_json):
         database=db["database"],
         port=db["port"],
         charset="utf8mb4",
-        collation="utf8mb4_general_ci"
+        collation="utf8mb4_general_ci",
+        connection_timeout=300
         )
         
         if conn.is_connected():
@@ -213,7 +217,7 @@ def main(json):
         global total_tables
         cursor, conn = db_conect(json)
 
-        tebles_names = ["usuario","grupo","permissoes","rota"]#get_tables_name(cursor)
+        tebles_names = ["usuario","grupo","permissoes","rota","not_a_i"]#get_tables_name(cursor)
         total_tables = len(tebles_names)
         
         colunas_com_forengKey = ["permissoes","usuario"]#get_foreign_keys(cursor)
@@ -279,6 +283,15 @@ main({
             "type_file":"csv",
             "file_sep": ",",
             "autoIncrement":True
+        },
+        {
+            "name_table": "not_a_i",
+            "primary_key": "id",
+            "unwanted_attributes": [],
+            "path_file": "./not_a_i.csv",
+            "type_file":"csv",
+            "file_sep": ";",
+            "autoIncrement":False
         }
     ]
   })

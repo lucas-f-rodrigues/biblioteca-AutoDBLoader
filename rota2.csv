@@ -1,20 +1,4 @@
 id,rota,get,post,patch,put,delete
-1,aula,True,False,False,False,False
-2,modulo,True,False,False,False,False
-3,turma,True,False,False,False,False
-4,usuario,True,False,False,False,False
-5,aula/status,False,True,False,False,False
-6,usuario/csv,False,True,False,False,False
-7,aula,True,True,True,True,True
-8,modulo,True,True,True,True,True
-9,turma,True,True,True,True,True
-10,usuario,True,True,True,True,True
-11,arquivos,True,True,True,True,True
-12,arquivos/*,True,True,True,True,True
-13,arquivos:id,True,True,True,True,True
-14,arquivos,True,False,False,False,False
-15,arquivos/*,True,False,False,False,False
-16,arquivos:id,True,False,False,False,False
 17,aula,True,False,False,False,False
 18,modulo,True,False,False,False,False
 19,turma,True,False,False,False,False
@@ -31,3 +15,4 @@ id,rota,get,post,patch,put,delete
 30,arquivos,True,False,False,False,False
 31,arquivos/*,True,False,False,False,False
 32,arquivos:id,True,False,False,False,False
+
